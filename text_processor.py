@@ -4,6 +4,188 @@ Text-Processor für Diff-Generierung und -Anzeige
 
 import difflib
 from typing import List, Tuple
+from dataclasses import dataclass
+from enum import Enum
+
+
+class ChangeState(Enum):
+    """State of a diff change"""
+    PENDING = "pending"      # Not yet decided
+    ACCEPTED = "accepted"    # User accepted the change
+    REJECTED = "rejected"    # User rejected (keep original)
+
+
+@dataclass
+class DiffChange:
+    """Represents a single diff change with state tracking"""
+    change_id: str                          # Unique identifier (e.g., "change_0", "change_1")
+    operation: str                          # Type of change: 'delete', 'insert', 'replace', 'equal'
+    original_text: str                      # Original words (for delete/replace)
+    modified_text: str                      # Modified words (for insert/replace)
+    original_indices: Tuple[int, int]       # (i1, i2) from SequenceMatcher
+    modified_indices: Tuple[int, int]       # (j1, j2) from SequenceMatcher
+    state: ChangeState = ChangeState.PENDING  # Current state
+
+
+class InteractiveDiff:
+    """Manages interactive diff state and rendering"""
+
+    def __init__(self, original: str, modified: str):
+        self.original = original
+        self.modified = modified
+        self.original_words = original.split()
+        self.modified_words = modified.split()
+        self.changes: List[DiffChange] = []
+        self._generate_changes()
+
+    def _generate_changes(self):
+        """Generate DiffChange objects from SequenceMatcher"""
+        matcher = difflib.SequenceMatcher(None, self.original_words, self.modified_words)
+        change_id = 0
+
+        for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+            original_text = ' '.join(self.original_words[i1:i2])
+            modified_text = ' '.join(self.modified_words[j1:j2])
+
+            # Only assign IDs to non-equal changes
+            if tag != 'equal':
+                change_id_str = f"change_{change_id}"
+                change_id += 1
+            else:
+                change_id_str = ""  # Equal changes don't need IDs
+
+            change = DiffChange(
+                change_id=change_id_str,
+                operation=tag,
+                original_text=original_text,
+                modified_text=modified_text,
+                original_indices=(i1, i2),
+                modified_indices=(j1, j2),
+                state=ChangeState.PENDING if tag != 'equal' else ChangeState.ACCEPTED
+            )
+            self.changes.append(change)
+
+    def toggle_change(self, change_id: str):
+        """Toggle a change between accepted/rejected states"""
+        for change in self.changes:
+            if change.change_id == change_id:
+                if change.state == ChangeState.PENDING:
+                    change.state = ChangeState.ACCEPTED
+                elif change.state == ChangeState.ACCEPTED:
+                    change.state = ChangeState.REJECTED
+                elif change.state == ChangeState.REJECTED:
+                    change.state = ChangeState.ACCEPTED
+                break
+
+    def get_final_text(self) -> str:
+        """Reconstruct final text based on current change states"""
+        result_words = []
+
+        for change in self.changes:
+            if change.operation == 'equal':
+                result_words.append(change.modified_text)
+            elif change.operation == 'delete':
+                if change.state == ChangeState.REJECTED:
+                    # User rejected the deletion, keep original
+                    result_words.append(change.original_text)
+                # If accepted or pending, delete it (contribute nothing)
+            elif change.operation == 'insert':
+                if change.state != ChangeState.REJECTED:
+                    # Pending or accepted: include the insertion
+                    result_words.append(change.modified_text)
+                # If rejected, don't insert (contribute nothing)
+            elif change.operation == 'replace':
+                if change.state == ChangeState.REJECTED:
+                    # User rejected the replacement, use original
+                    result_words.append(change.original_text)
+                else:  # ACCEPTED or PENDING defaults to modified
+                    result_words.append(change.modified_text)
+
+        return ' '.join(result_words)
+
+    def generate_interactive_html(self) -> str:
+        """Generate HTML with clickable changes"""
+        html_parts = []
+        html_parts.append('<div style="font-family: Arial, sans-serif; line-height: 1.8; padding: 10px;">')
+
+        for change in self.changes:
+            if change.operation == 'equal':
+                html_parts.append(change.modified_text)
+            else:
+                html_parts.append(self._render_change(change))
+
+            html_parts.append(' ')
+
+        html_parts.append('</div>')
+        return ''.join(html_parts)
+
+    def _render_change(self, change: DiffChange) -> str:
+        """Render a single change as clickable HTML"""
+        cursor_style = "cursor: pointer;"
+        tooltip = "title='Klicken um zu akzeptieren/ablehnen'"
+
+        if change.operation == 'delete':
+            if change.state == ChangeState.ACCEPTED:
+                # Accepted deletion: show with confirmation (light gray background)
+                return (f'<a href="#{change.change_id}" style="{cursor_style} '
+                       f'background-color: #f0f0f0; text-decoration: line-through; '
+                       f'color: #999;" {tooltip}>{change.original_text}</a>')
+            elif change.state == ChangeState.REJECTED:
+                # Rejected deletion: show original without strikethrough (green border = kept)
+                return (f'<a href="#{change.change_id}" style="{cursor_style} '
+                       f'background-color: #e8f5e9; border: 2px solid #4caf50; '
+                       f'padding: 2px 4px; border-radius: 3px;" '
+                       f'{tooltip}>{change.original_text}</a>')
+            else:  # PENDING
+                return (f'<a href="#{change.change_id}" style="{cursor_style} '
+                       f'background-color: {TextProcessor.COLOR_DELETION}; '
+                       f'text-decoration: line-through; padding: 2px 4px;" '
+                       f'{tooltip}>{change.original_text}</a>')
+
+        elif change.operation == 'insert':
+            if change.state == ChangeState.ACCEPTED:
+                # Accepted insertion: show with confirmation (green border)
+                return (f'<a href="#{change.change_id}" style="{cursor_style} '
+                       f'background-color: #e8f5e9; border: 2px solid #4caf50; '
+                       f'padding: 2px 4px; border-radius: 3px;" '
+                       f'{tooltip}>{change.modified_text}</a>')
+            elif change.state == ChangeState.REJECTED:
+                # Rejected insertion: show crossed out
+                return (f'<a href="#{change.change_id}" style="{cursor_style} '
+                       f'background-color: #f0f0f0; text-decoration: line-through; '
+                       f'color: #999; padding: 2px 4px;" '
+                       f'{tooltip}>{change.modified_text}</a>')
+            else:  # PENDING
+                return (f'<a href="#{change.change_id}" style="{cursor_style} '
+                       f'background-color: {TextProcessor.COLOR_ADDITION}; '
+                       f'padding: 2px 4px;" '
+                       f'{tooltip}>{change.modified_text}</a>')
+
+        elif change.operation == 'replace':
+            if change.state == ChangeState.ACCEPTED:
+                # Accepted: show new version with confirmation (green border)
+                return (f'<a href="#{change.change_id}" style="{cursor_style} '
+                       f'background-color: #e8f5e9; border: 2px solid #4caf50; '
+                       f'padding: 2px 4px; border-radius: 3px;" '
+                       f'{tooltip}>{change.modified_text}</a>')
+            elif change.state == ChangeState.REJECTED:
+                # Rejected: show original with confirmation (red border)
+                return (f'<a href="#{change.change_id}" style="{cursor_style} '
+                       f'background-color: #ffebee; border: 2px solid #f44336; '
+                       f'padding: 2px 4px; border-radius: 3px;" '
+                       f'{tooltip}>{change.original_text}</a>')
+            else:  # PENDING
+                # Show both: old (red, strikethrough) → new (green)
+                return (f'<a href="#{change.change_id}" style="{cursor_style} '
+                       f'background-color: {TextProcessor.COLOR_DELETION}; '
+                       f'text-decoration: line-through; padding: 2px 4px;" '
+                       f'{tooltip}>{change.original_text}</a> '
+                       f'<a href="#{change.change_id}" style="{cursor_style} '
+                       f'background-color: {TextProcessor.COLOR_ADDITION}; '
+                       f'padding: 2px 4px;" '
+                       f'{tooltip}>{change.modified_text}</a>')
+
+        return change.modified_text
 
 
 class TextProcessor:

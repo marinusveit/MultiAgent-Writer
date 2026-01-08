@@ -7,13 +7,14 @@ import sys
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTextEdit, QPushButton, QComboBox, QLabel, QSplitter, QMessageBox,
-    QFileDialog, QMenuBar, QMenu, QDialog, QLineEdit, QFormLayout, QDialogButtonBox
+    QFileDialog, QMenuBar, QMenu, QDialog, QLineEdit, QFormLayout, QDialogButtonBox,
+    QTextBrowser
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction, QKeySequence
 
 from api_service import APIService, APIError, NetworkError, RateLimitError, AuthenticationError
-from text_processor import TextProcessor
+from text_processor import TextProcessor, InteractiveDiff, ChangeState
 
 
 class AnalysisDialog(QDialog):
@@ -221,6 +222,7 @@ class ThesisImproverWindow(QMainWindow):
         self.original_text = ""
         self.improved_text = ""
         self.current_analysis = ""  # Speichert die Opus 4.5 Analyse
+        self.interactive_diff = None  # Speichert InteractiveDiff-Instanz
 
         self.init_ui()
 
@@ -305,8 +307,10 @@ class ThesisImproverWindow(QMainWindow):
 
         right_layout.addLayout(right_header_layout)
 
-        self.output_text = QTextEdit()
+        self.output_text = QTextBrowser()  # Changed from QTextEdit to QTextBrowser
         self.output_text.setReadOnly(True)
+        self.output_text.setOpenExternalLinks(False)  # Handle clicks internally
+        self.output_text.anchorClicked.connect(self.handle_change_click)
         self.output_text.setPlaceholderText("Hier erscheint der verbesserte Text...")
 
         right_layout.addWidget(self.output_text)
@@ -357,8 +361,20 @@ class ThesisImproverWindow(QMainWindow):
         self.show_analysis_button.clicked.connect(self.show_analysis_dialog)
         self.show_analysis_button.setEnabled(False)
 
+        self.accept_all_button = QPushButton("✓ Alle akzeptieren")
+        self.accept_all_button.setToolTip("Alle Änderungen akzeptieren")
+        self.accept_all_button.clicked.connect(self.accept_all_changes)
+        self.accept_all_button.setEnabled(False)
+
+        self.reject_all_button = QPushButton("✗ Alle ablehnen")
+        self.reject_all_button.setToolTip("Alle Änderungen ablehnen (Original beibehalten)")
+        self.reject_all_button.clicked.connect(self.reject_all_changes)
+        self.reject_all_button.setEnabled(False)
+
         button_layout.addWidget(self.process_button)
         button_layout.addWidget(self.show_analysis_button)
+        button_layout.addWidget(self.accept_all_button)
+        button_layout.addWidget(self.reject_all_button)
         button_layout.addWidget(self.accept_button)
         button_layout.addWidget(self.copy_button)
         button_layout.addWidget(self.export_button)
@@ -486,8 +502,9 @@ class ThesisImproverWindow(QMainWindow):
             # Original-Text speichern
             self.original_text = input_text
 
-            # HTML-Diff generieren und anzeigen
-            html_diff = self.text_processor.generate_diff_html(input_text, self.improved_text)
+            # Create interactive diff and display
+            self.interactive_diff = InteractiveDiff(input_text, self.improved_text)
+            html_diff = self.interactive_diff.generate_interactive_html()
             self.output_text.setHtml(html_diff)
 
             # Buttons aktivieren
@@ -497,16 +514,13 @@ class ThesisImproverWindow(QMainWindow):
             self.export_button.setEnabled(True)
             self.reset_button.setEnabled(True)
             self.toggle_view_button.setEnabled(True)
+            self.accept_all_button.setEnabled(True)
+            self.reject_all_button.setEnabled(True)
             self.show_diff = True
             self.toggle_view_button.setText("Nur Text anzeigen")
 
-            # Status aktualisieren
-            stats = self.text_processor.get_statistics(input_text, self.improved_text)
-            self.status_label.setText(
-                f"✅ Erfolgreich! Multi-Agent-Workflow abgeschlossen. "
-                f"{stats['original_words']} → {stats['modified_words']} Wörter "
-                f"({stats['word_diff']:+d}), {stats['total_changes']} Änderungen"
-            )
+            # Update status with statistics
+            self.update_diff_statistics()
 
         except AuthenticationError as e:
             QMessageBox.critical(
@@ -557,8 +571,10 @@ class ThesisImproverWindow(QMainWindow):
         if not self.improved_text:
             return
 
+        # Use final text from interactive diff (respects user's accept/reject choices)
+        final_text = self.interactive_diff.get_final_text() if self.interactive_diff else self.improved_text
         clipboard = QApplication.clipboard()
-        clipboard.setText(self.improved_text)
+        clipboard.setText(final_text)
 
         self.status_label.setText("✓ In Zwischenablage kopiert")
 
@@ -567,7 +583,9 @@ class ThesisImproverWindow(QMainWindow):
         if not self.improved_text:
             return
 
-        self.input_text.setPlainText(self.improved_text)
+        # Use final text from interactive diff (respects user's accept/reject choices)
+        final_text = self.interactive_diff.get_final_text() if self.interactive_diff else self.improved_text
+        self.input_text.setPlainText(final_text)
         self.status_label.setText("✓ Änderungen übernommen")
 
     def toggle_view(self):
@@ -576,15 +594,20 @@ class ThesisImproverWindow(QMainWindow):
             return
 
         if self.show_diff:
-            # Zeige nur den reinen Text
-            self.output_text.setPlainText(self.improved_text)
+            # Zeige nur den reinen Text (mit aktuellen Auswahlen)
+            final_text = self.interactive_diff.get_final_text() if self.interactive_diff else self.improved_text
+            self.output_text.setPlainText(final_text)
             self.toggle_view_button.setText("Unterschiede anzeigen")
             self.show_diff = False
         else:
             # Zeige Diff-Ansicht
-            html_diff = self.text_processor.generate_diff_html(
-                self.original_text, self.improved_text
-            )
+            if self.interactive_diff:
+                html_diff = self.interactive_diff.generate_interactive_html()
+            else:
+                # Fallback to creating interactive diff
+                self.interactive_diff = InteractiveDiff(self.original_text, self.improved_text)
+                html_diff = self.interactive_diff.generate_interactive_html()
+
             self.output_text.setHtml(html_diff)
             self.toggle_view_button.setText("Text anzeigen")
             self.show_diff = True
@@ -608,8 +631,10 @@ class ThesisImproverWindow(QMainWindow):
 
         if filename:
             try:
+                # Use final text from interactive diff (respects user's accept/reject choices)
+                final_text = self.interactive_diff.get_final_text() if self.interactive_diff else self.improved_text
                 with open(filename, 'w', encoding='utf-8') as f:
-                    f.write(self.improved_text)
+                    f.write(final_text)
 
                 self.status_label.setText(f"✓ Gespeichert: {filename}")
                 QMessageBox.information(
@@ -631,14 +656,82 @@ class ThesisImproverWindow(QMainWindow):
         self.improved_text = ""
         self.original_text = ""
         self.current_analysis = ""
+        self.interactive_diff = None
         self.copy_button.setEnabled(False)
         self.accept_button.setEnabled(False)
         self.export_button.setEnabled(False)
         self.reset_button.setEnabled(False)
         self.toggle_view_button.setEnabled(False)
         self.show_analysis_button.setEnabled(False)
+        self.accept_all_button.setEnabled(False)
+        self.reject_all_button.setEnabled(False)
         self.show_diff = True
         self.status_label.setText("Bereit")
+
+    def handle_change_click(self, url):
+        """Handle clicks on diff changes"""
+        if not self.interactive_diff:
+            return
+
+        change_id = url.toString().lstrip('#')
+
+        # Toggle the change state
+        self.interactive_diff.toggle_change(change_id)
+
+        # Re-render the diff
+        html = self.interactive_diff.generate_interactive_html()
+        self.output_text.setHtml(html)
+
+        # Update the stored improved_text
+        self.improved_text = self.interactive_diff.get_final_text()
+
+        # Update status with statistics
+        self.update_diff_statistics()
+
+    def update_diff_statistics(self):
+        """Update status bar with current diff statistics"""
+        if not self.interactive_diff:
+            return
+
+        total_changes = sum(1 for c in self.interactive_diff.changes if c.operation != 'equal')
+        accepted = sum(1 for c in self.interactive_diff.changes
+                      if c.operation != 'equal' and c.state == ChangeState.ACCEPTED)
+        rejected = sum(1 for c in self.interactive_diff.changes
+                      if c.operation != 'equal' and c.state == ChangeState.REJECTED)
+        pending = total_changes - accepted - rejected
+
+        self.status_label.setText(
+            f"Änderungen: {total_changes} gesamt | "
+            f"{accepted} akzeptiert | {rejected} abgelehnt | {pending} ausstehend"
+        )
+
+    def accept_all_changes(self):
+        """Accept all pending changes"""
+        if not self.interactive_diff:
+            return
+
+        for change in self.interactive_diff.changes:
+            if change.operation != 'equal':
+                change.state = ChangeState.ACCEPTED
+
+        html = self.interactive_diff.generate_interactive_html()
+        self.output_text.setHtml(html)
+        self.improved_text = self.interactive_diff.get_final_text()
+        self.update_diff_statistics()
+
+    def reject_all_changes(self):
+        """Reject all pending changes"""
+        if not self.interactive_diff:
+            return
+
+        for change in self.interactive_diff.changes:
+            if change.operation != 'equal':
+                change.state = ChangeState.REJECTED
+
+        html = self.interactive_diff.generate_interactive_html()
+        self.output_text.setHtml(html)
+        self.improved_text = self.interactive_diff.get_final_text()
+        self.update_diff_statistics()
 
     def show_analysis_dialog(self):
         """Zeigt die detaillierte Analyse von Claude Opus 4.5"""
