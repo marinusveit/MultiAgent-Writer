@@ -1,146 +1,209 @@
-# Build-Anleitung für Thesis Improver
+# Build and Packaging Guide
 
-Diese Anleitung zeigt, wie du eine eigenständige Windows .exe Datei erstellst.
+This document explains how to build, package, and distribute MultiAgent-Writer.
 
-## Voraussetzungen
+## Quick Start
 
-- Python 3.10 oder höher installiert
-- Alle Dependencies installiert (siehe README.md)
-
-## Windows Executable erstellen
-
-### Option 1: Mit PyInstaller Spec-Datei (Empfohlen)
+### Development Installation
 
 ```bash
-# Virtual Environment aktivieren
-venv\Scripts\activate  # Windows
-# oder
-source venv/bin/activate  # Linux/Mac
+# Clone repository
+git clone <repository-url>
+cd MultiAgent-Writer
 
-# Mit Spec-Datei builden
-pyinstaller build_windows.spec
+# Create virtual environment
+python3 -m venv .venv
+source .venv/bin/activate  # Linux/Mac
+# .venv\Scripts\activate    # Windows
+
+# Install in development mode
+make install-dev
+# or: pip install -e .[dev]
 ```
 
-Die fertige .exe befindet sich in `dist/ThesisImprover.exe`
-
-### Option 2: Direkter PyInstaller-Befehl
+### Running the Application
 
 ```bash
-pyinstaller --onefile --windowed --name ThesisImprover --add-data "config.json;." --add-data "prompts.py;." main.py
+# Using Makefile
+make run
+
+# Using command-line script
+multiagent-writer
+
+# Using Python module
+python -m multiagent_writer.main
+
+# Legacy launcher (for compatibility)
+python run_new.py
 ```
 
-## Ausgabe
+## Project Structure
 
-Nach erfolgreichem Build findest du:
-- `dist/ThesisImprover.exe` - Die eigenständige Anwendung
-- `build/` - Temporäre Build-Dateien (kann gelöscht werden)
+MultiAgent-Writer uses modern Python packaging with \`pyproject.toml\`:
 
-## Die .exe verwenden
+```
+MultiAgent-Writer/
+├── pyproject.toml          # Package configuration (PEP 517/518)
+├── Makefile                # Development task automation
+├── src/
+│   └── multiagent_writer/  # Main package
+│       ├── __init__.py
+│       ├── main.py         # Entry point
+│       └── ...             # Submodules
+├── .env.example            # Environment template
+└── requirements.txt        # Legacy dependencies file
+```
 
-Die `ThesisImprover.exe` ist eine eigenständige Anwendung:
+## Makefile Commands
 
-1. **Kopiere** die .exe auf einen beliebigen Windows-Rechner
-2. **Doppelklick** auf die .exe
-3. Beim ersten Start öffne die Einstellungen (Menü: Einstellungen → API-Konfiguration)
-4. Trage deinen OpenRouter API-Key ein
-5. Fertig!
+The \`Makefile\` provides shortcuts for common development tasks:
 
-## Wichtige Hinweise
-
-### config.json
-
-Die `config.json` wird beim ersten Start automatisch erstellt im gleichen Verzeichnis wie die .exe.
-
-### Größe der .exe
-
-Die .exe ist ca. 80-100 MB groß, da sie Python und alle Dependencies enthält. Das ist normal für PyInstaller-Anwendungen.
-
-### Antivirus-Warnungen
-
-Manche Antivirus-Programme warnen bei selbst-erstellten .exe Dateien. Das ist ein False Positive. Gründe:
-
-- Die .exe ist nicht digital signiert (kostet Geld)
-- PyInstaller-Executables werden manchmal als verdächtig eingestuft
-
-**Lösung:** Die .exe als Ausnahme in deinem Antivirus-Programm hinzufügen.
-
-### Digital Signieren (Optional, für Professionelle Verwendung)
-
-Um Antivirus-Warnungen zu vermeiden, kannst du die .exe digital signieren:
-
-1. Code-Signing-Zertifikat kaufen (z.B. von DigiCert, ca. 200€/Jahr)
-2. Mit `signtool` (Windows SDK) signieren
-
-Für persönliche/interne Verwendung nicht notwendig.
-
-## Problembehebung
-
-### "PyInstaller nicht gefunden"
+### Installation
 
 ```bash
-pip install pyinstaller
+make install        # Install package (production)
+make install-dev    # Install with dev dependencies
 ```
 
-### Build schlägt fehl
-
-1. Stelle sicher, dass alle Dependencies installiert sind:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-2. Lösche `build/` und `dist/` Ordner und versuche es erneut:
-   ```bash
-   rmdir /s /q build dist  # Windows
-   rm -rf build dist       # Linux/Mac
-   ```
-
-### .exe startet nicht
-
-1. Teste, ob das Python-Script funktioniert:
-   ```bash
-   python main.py
-   ```
-
-2. Wenn das Script funktioniert, aber die .exe nicht, builded mit Debug-Modus:
-   ```bash
-   pyinstaller --onefile --windowed --debug all --name ThesisImprover main.py
-   ```
-
-3. Starte die .exe über die Kommandozeile, um Fehlermeldungen zu sehen:
-   ```bash
-   dist\ThesisImprover.exe
-   ```
-
-## Alternativen zu PyInstaller
-
-Falls PyInstaller Probleme macht:
-
-### cx_Freeze
+### Running
 
 ```bash
-pip install cx_Freeze
-cxfreeze main.py --target-dir dist --target-name ThesisImprover.exe
+make run           # Launch the application
 ```
 
-### Nuitka
+### Code Quality
 
 ```bash
-pip install nuitka
-python -m nuitka --onefile --windows-disable-console --enable-plugin=pyqt6 main.py
+make format        # Format code with Black
+make lint          # Run Ruff and MyPy
 ```
 
-Nuitka ist langsamer beim Builden, aber erstellt schnellere und kleinere Executables.
+### Testing
 
-## Distribution
+```bash
+make test          # Run pytest with coverage
+```
 
-Zum Verteilen der Anwendung:
+### Cleanup
 
-1. Erstelle einen Ordner mit:
-   - `ThesisImprover.exe`
-   - `README.md` (Nutzungsanleitung)
+```bash
+make clean         # Remove build artifacts
+```
 
-2. Erstelle eine ZIP-Datei
+## Package Configuration
 
-3. Teile die ZIP-Datei mit deiner Freundin
+### pyproject.toml
 
-**Wichtig:** Der API-Key muss von jedem Nutzer selbst in den Einstellungen eingetragen werden!
+The \`pyproject.toml\` file defines:
+
+- **Package metadata**: Name, version, description, authors
+- **Dependencies**: PyQt6, requests, python-dotenv
+- **Optional dependencies**: Dev tools (pytest, black, ruff, mypy)
+- **Entry point**: \`multiagent-writer\` command
+- **Tool configurations**: Black, Ruff, MyPy, Pytest
+
+### Entry Point
+
+The package provides a command-line entry point:
+
+```toml
+[project.scripts]
+multiagent-writer = "multiagent_writer.main:main"
+```
+
+After installation, you can run:
+```bash
+multiagent-writer
+```
+
+## Development Workflow
+
+### 1. Setup Environment
+
+```bash
+git clone <repository-url>
+cd MultiAgent-Writer
+python3 -m venv .venv
+source .venv/bin/activate
+make install-dev
+```
+
+### 2. Configure API Key
+
+```bash
+cp .env.example .env
+# Edit .env and add your OpenRouter API key
+```
+
+### 3. Make Changes
+
+Edit files in \`src/multiagent_writer/\`
+
+### 4. Test Changes
+
+```bash
+make run           # Manual testing
+```
+
+### 5. Code Quality
+
+```bash
+make format        # Format code
+make lint          # Check code quality
+```
+
+### 6. Commit
+
+```bash
+git add .
+git commit -m "Your changes"
+git push
+```
+
+## Dependencies
+
+### Production Dependencies
+
+- **PyQt6** (>=6.6.0) - GUI framework
+- **requests** (>=2.31.0) - HTTP client
+- **python-dotenv** (>=1.0.0) - Environment variables
+
+### Development Dependencies
+
+- **pytest** (>=7.4.0) - Testing framework
+- **pytest-qt** (>=4.2.0) - PyQt6 testing support
+- **pytest-cov** (>=4.1.0) - Coverage reporting
+- **black** (>=23.0.0) - Code formatter
+- **ruff** (>=0.1.0) - Fast linter
+- **mypy** (>=1.7.0) - Type checker
+
+## Troubleshooting
+
+### "No module named 'multiagent_writer'"
+
+**Solution**: Install in development mode:
+```bash
+pip install -e .
+```
+
+### "multiagent-writer: command not found"
+
+**Solution**: Reinstall package:
+```bash
+pip uninstall multiagent-writer
+pip install -e .
+```
+
+### PyQt6 Import Errors
+
+**Solution**: Check Python version (requires 3.10+) and reinstall PyQt6:
+```bash
+python --version
+pip install --force-reinstall PyQt6
+```
+
+## References
+
+- [PEP 517](https://peps.python.org/pep-0517/) - Build system specification
+- [PEP 518](https://peps.python.org/pep-0518/) - pyproject.toml specification
+- [setuptools documentation](https://setuptools.pypa.io/)

@@ -1,6 +1,5 @@
 """
-Thesis Improver - Hauptanwendung
-KI-gestütztes Text-Tool für Masterarbeiten
+Main application window for MultiAgent-Writer
 """
 
 import sys
@@ -10,234 +9,18 @@ from PyQt6.QtWidgets import (
     QFileDialog, QMenuBar, QMenu, QDialog, QLineEdit, QFormLayout, QDialogButtonBox,
     QTextBrowser, QProgressDialog, QPlainTextEdit
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QUrl
 from PyQt6.QtGui import QAction, QKeySequence
 
-from api_service import APIService, APIError, NetworkError, RateLimitError, AuthenticationError
-from text_processor import TextProcessor, InteractiveDiff, ChangeState
+# Import from new structure
+from ..compat_api_service import APIService
+from ..api.errors import APIError, NetworkError, RateLimitError, AuthenticationError
+from ..core.text_processor import TextProcessor, InteractiveDiff, ChangeState
 
-
-class APIWorker(QThread):
-    """Background worker for API calls"""
-    progress = pyqtSignal(str)  # Status message
-    finished = pyqtSignal(dict)  # Result
-    error = pyqtSignal(Exception)  # Error
-
-    def __init__(self, api_service, mode, text, parent=None):
-        super().__init__(parent)
-        self.api_service = api_service
-        self.mode = mode
-        self.text = text
-
-    def run(self):
-        """Execute API call in background thread"""
-        try:
-            if self.mode == "ausformulieren":
-                result = self.api_service.improve_text_ausformulieren(
-                    self.text,
-                    status_callback=lambda msg: self.progress.emit(msg)
-                )
-            else:  # korrekturlesen
-                result = self.api_service.improve_text_korrekturlesen(
-                    self.text,
-                    status_callback=lambda msg: self.progress.emit(msg)
-                )
-            self.finished.emit(result)
-        except Exception as e:
-            self.error.emit(e)
-
-
-class AnalysisDialog(QDialog):
-    """Dialog zur Anzeige der Claude Opus 4.5 Analyse"""
-
-    def __init__(self, analysis_text: str, parent=None):
-        super().__init__(parent)
-        self.init_ui(analysis_text)
-
-    def init_ui(self, analysis_text):
-        """Initialisiert den Analyse-Dialog"""
-        self.setWindowTitle("Claude Opus 4.5 - Detaillierte Textanalyse")
-        self.setMinimumSize(900, 700)
-
-        layout = QVBoxLayout(self)
-
-        # Überschrift
-        header_label = QLabel("<h2>📊 Analyse von Claude Opus 4.5</h2>")
-        header_label.setStyleSheet("color: #2c3e50; padding: 10px;")
-        layout.addWidget(header_label)
-
-        # Analyse-Text anzeigen (mit Markdown-Rendering)
-        text_view = QTextEdit()
-        text_view.setReadOnly(True)
-        text_view.setMarkdown(analysis_text)
-        text_view.setStyleSheet(
-            "font-family: 'Segoe UI', Arial, sans-serif; "
-            "font-size: 10pt; "
-            "padding: 15px; "
-            "background-color: #ffffff; "
-            "border: 1px solid #dee2e6; "
-            "border-radius: 4px;"
-        )
-
-        layout.addWidget(text_view)
-
-        # Info-Text
-        info_label = QLabel(
-            "<i>💡 Diese Analyse wurde von Claude Opus 4.5 erstellt und dient als Grundlage "
-            "für die Textverbesserung durch GPT-5.2.</i>"
-        )
-        info_label.setWordWrap(True)
-        info_label.setStyleSheet("color: #6c757d; padding: 5px;")
-        layout.addWidget(info_label)
-
-        # Schließen-Button
-        close_button = QPushButton("Schließen")
-        close_button.clicked.connect(self.accept)
-        close_button.setStyleSheet(
-            "QPushButton { padding: 8px 20px; font-size: 11pt; }"
-        )
-        layout.addWidget(close_button)
-
-
-class SettingsDialog(QDialog):
-    """Dialog für API-Einstellungen"""
-
-    def __init__(self, api_service, parent=None):
-        super().__init__(parent)
-        self.api_service = api_service
-        self.init_ui()
-
-    def init_ui(self):
-        """Initialisiert die Dialog-UI"""
-        self.setWindowTitle("API-Einstellungen")
-        self.setMinimumWidth(500)
-
-        layout = QVBoxLayout(self)
-
-        # Formular
-        form_layout = QFormLayout()
-
-        # API-Key Eingabe
-        self.api_key_input = QLineEdit()
-        self.api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.api_key_input.setText(self.api_service.config.get('api_key', ''))
-        self.api_key_input.setPlaceholderText("sk-or-v1-...")
-        form_layout.addRow("API-Key:", self.api_key_input)
-
-        # "API-Key anzeigen" Checkbox
-        self.show_key_button = QPushButton("API-Key anzeigen")
-        self.show_key_button.setCheckable(True)
-        self.show_key_button.toggled.connect(self.toggle_key_visibility)
-        form_layout.addRow("", self.show_key_button)
-
-        # Model-Auswahl
-        self.model_combo = QComboBox()
-        self.model_combo.addItems([
-            "anthropic/claude-3.5-sonnet",
-            "anthropic/claude-opus-4.5",
-            "google/gemini-2.0-flash-001",
-            "openai/gpt-4o",
-            "meta-llama/llama-3.1-70b-instruct"
-        ])
-
-        current_model = self.api_service.config.get('model', 'anthropic/claude-3.5-sonnet')
-        index = self.model_combo.findText(current_model)
-        if index >= 0:
-            self.model_combo.setCurrentIndex(index)
-
-        form_layout.addRow("Model:", self.model_combo)
-
-        # System-Prompt (Leitfaden)
-        self.system_prompt_label = QLabel("Schreibregeln (System-Prompt):")
-        self.system_prompt_edit = QTextEdit()
-        self.system_prompt_edit.setPlainText(self.api_service.config.get('system_prompt', ''))
-        self.system_prompt_edit.setToolTip("Leitfaden für die Texterstellung (z.B. technische Dokumentation)")
-        self.system_prompt_edit.setMinimumHeight(150)
-        form_layout.addRow(self.system_prompt_label, self.system_prompt_edit)
-
-        # Thema der Arbeit
-        self.topic_label = QLabel("Thema der Arbeit:")
-        self.topic_edit = QLineEdit()
-        self.topic_edit.setText(self.api_service.config.get('thesis_topic', ''))
-        self.topic_edit.setToolTip("Kontext für bessere Textgenerierung")
-        self.topic_edit.setPlaceholderText("z.B. 'Künstliche Intelligenz in der Medizin'")
-        form_layout.addRow(self.topic_label, self.topic_edit)
-
-        # Hinweise
-        hint_label = QLabel(
-            "<p><b>Hinweise:</b></p>"
-            "<ul>"
-            "<li>OpenRouter API-Key erhältlich auf <a href='https://openrouter.ai'>openrouter.ai</a></li>"
-            "<li><b>claude-3.5-sonnet</b>: Empfohlen (gute Balance)</li>"
-            "<li><b>claude-opus-4.5</b>: Höchste Qualität (teuer)</li>"
-            "<li><b>gemini-2.0-flash</b>: Schnell und günstig</li>"
-            "</ul>"
-        )
-        hint_label.setOpenExternalLinks(True)
-        hint_label.setWordWrap(True)
-
-        layout.addLayout(form_layout)
-        layout.addWidget(hint_label)
-
-        # Buttons
-        button_box = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Save |
-            QDialogButtonBox.StandardButton.Cancel
-        )
-        button_box.accepted.connect(self.save_settings)
-        button_box.rejected.connect(self.reject)
-
-        layout.addWidget(button_box)
-
-    def toggle_key_visibility(self, checked):
-        """Schaltet die Sichtbarkeit des API-Keys um"""
-        if checked:
-            self.api_key_input.setEchoMode(QLineEdit.EchoMode.Normal)
-            self.show_key_button.setText("API-Key verbergen")
-        else:
-            self.api_key_input.setEchoMode(QLineEdit.EchoMode.Password)
-            self.show_key_button.setText("API-Key anzeigen")
-
-    def save_settings(self):
-        """Speichert die Einstellungen"""
-        api_key = self.api_key_input.text().strip()
-        model = self.model_combo.currentText()
-
-        if not api_key:
-            QMessageBox.warning(
-                self,
-                "Ungültige Eingabe",
-                "Bitte gib einen API-Key ein."
-            )
-            return
-
-        try:
-            # Neue Config zusammenstellen
-            config = {
-                'api_key': api_key,
-                'model': model,
-                'timeout': self.api_service.config.get('timeout', 180),
-                'models': self.api_service.config.get('models', {}),
-                'system_prompt': self.system_prompt_edit.toPlainText(),
-                'thesis_topic': self.topic_edit.text().strip()
-            }
-
-            # Einstellungen speichern
-            self.api_service.save_config(config)
-
-            QMessageBox.information(
-                self,
-                "Erfolg",
-                "Einstellungen wurden gespeichert."
-            )
-            self.accept()
-
-        except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Fehler",
-                f"Fehler beim Speichern der Einstellungen:\n{str(e)}"
-            )
+# Import UI components from new structure
+from .workers import APIWorker
+from .dialogs import AnalysisDialog, SettingsDialog
+from .button_manager import OutputButtonManager
 
 
 class ThesisImproverWindow(QMainWindow):
@@ -426,6 +209,18 @@ class ThesisImproverWindow(QMainWindow):
         self.reject_all_button.clicked.connect(self.reject_all_changes)
         self.reject_all_button.setEnabled(False)
 
+        # Initialize button manager for output controls
+        self.button_manager = OutputButtonManager([
+            self.copy_button,
+            self.accept_button,
+            self.export_button,
+            self.reset_button,
+            self.toggle_view_button,
+            self.show_analysis_button,
+            self.accept_all_button,
+            self.reject_all_button
+        ])
+
         button_layout.addWidget(self.process_button)
         button_layout.addWidget(self.show_analysis_button)
         button_layout.addWidget(self.accept_all_button)
@@ -480,6 +275,61 @@ class ThesisImproverWindow(QMainWindow):
         about_action = QAction("Über", self)
         about_action.triggered.connect(self.show_about)
         help_menu.addAction(about_action)
+
+    # === Helper Methods ===
+
+    def _close_progress_dialog(self):
+        """Closes progress dialog if it exists"""
+        if hasattr(self, 'progress_dialog') and self.progress_dialog:
+            self.progress_dialog.close()
+            self.progress_dialog = None
+
+    def _get_final_text(self) -> str:
+        """Gets final text respecting user's accept/reject choices"""
+        if self.interactive_diff:
+            return self.interactive_diff.get_final_text()
+        return self.improved_text
+
+    def _show_error_dialog(self, exception: Exception):
+        """Unified error handling"""
+        # Error message mappings
+        ERROR_MESSAGES = {
+            AuthenticationError: (
+                "Authentifizierungs-Fehler",
+                "{}\n\nBitte gehe zu Einstellungen und trage einen gültigen API-Key ein.",
+                "✗ Fehler: Ungültiger API-Key"
+            ),
+            NetworkError: (
+                "Netzwerk-Fehler",
+                "{}\n\nBitte prüfe deine Internetverbindung.",
+                "✗ Fehler: Keine Verbindung"
+            ),
+            RateLimitError: (
+                "Rate Limit",
+                "{}\n\nBitte warte einen Moment und versuche es erneut.",
+                "✗ Zu viele Anfragen"
+            ),
+            APIError: (
+                "API-Fehler",
+                "Ein Fehler ist aufgetreten:\n{}",
+                "✗ API-Fehler"
+            )
+        }
+
+        error_type = type(exception)
+
+        if error_type in ERROR_MESSAGES:
+            title, message_template, status = ERROR_MESSAGES[error_type]
+            QMessageBox.critical(self, title, message_template.format(str(exception)))
+            self.status_label.setText(status)
+        else:
+            # Unknown error
+            QMessageBox.critical(
+                self,
+                "Unbekannter Fehler",
+                f"Ein unerwarteter Fehler ist aufgetreten:\n{str(exception)}"
+            )
+            self.status_label.setText("✗ Unbekannter Fehler")
 
     def create_shortcuts(self):
         """Erstellt Tastatur-Shortcuts"""
@@ -569,8 +419,7 @@ class ThesisImproverWindow(QMainWindow):
     def on_api_success(self, result):
         """Handle successful API response"""
         # Close progress dialog
-        if hasattr(self, 'progress_dialog') and self.progress_dialog:
-            self.progress_dialog.close()
+        self._close_progress_dialog()
 
         mode = self.mode_combo.currentText()
 
@@ -590,15 +439,8 @@ class ThesisImproverWindow(QMainWindow):
         html_diff = self.interactive_diff.generate_interactive_html()
         self.output_text.setHtml(html_diff)
 
-        # Buttons aktivieren
-        self.show_analysis_button.setEnabled(True)
-        self.copy_button.setEnabled(True)
-        self.accept_button.setEnabled(True)
-        self.export_button.setEnabled(True)
-        self.reset_button.setEnabled(True)
-        self.toggle_view_button.setEnabled(True)
-        self.accept_all_button.setEnabled(True)
-        self.reject_all_button.setEnabled(True)
+        # Enable all output buttons
+        self.button_manager.enable_all()
         self.show_diff = True
         self.toggle_view_button.setText("Nur Text anzeigen")
 
@@ -611,52 +453,13 @@ class ThesisImproverWindow(QMainWindow):
     def on_api_error(self, exception):
         """Handle API error"""
         # Close progress dialog
-        if hasattr(self, 'progress_dialog') and self.progress_dialog:
-            self.progress_dialog.close()
+        self._close_progress_dialog()
 
         # Re-enable process button
         self.process_button.setEnabled(True)
 
-        # Show appropriate error message
-        if isinstance(exception, AuthenticationError):
-            QMessageBox.critical(
-                self,
-                "Authentifizierungs-Fehler",
-                f"{str(exception)}\n\nBitte gehe zu Einstellungen und trage einen gültigen API-Key ein."
-            )
-            self.status_label.setText("✗ Fehler: Ungültiger API-Key")
-
-        elif isinstance(exception, NetworkError):
-            QMessageBox.critical(
-                self,
-                "Netzwerk-Fehler",
-                f"{str(exception)}\n\nBitte prüfe deine Internetverbindung."
-            )
-            self.status_label.setText("✗ Fehler: Keine Verbindung")
-
-        elif isinstance(exception, RateLimitError):
-            QMessageBox.warning(
-                self,
-                "Rate Limit",
-                f"{str(exception)}\n\nBitte warte einen Moment und versuche es erneut."
-            )
-            self.status_label.setText("✗ Zu viele Anfragen")
-
-        elif isinstance(exception, APIError):
-            QMessageBox.critical(
-                self,
-                "API-Fehler",
-                f"Ein Fehler ist aufgetreten:\n{str(exception)}"
-            )
-            self.status_label.setText("✗ API-Fehler")
-
-        else:
-            QMessageBox.critical(
-                self,
-                "Unbekannter Fehler",
-                f"Ein unerwarteter Fehler ist aufgetreten:\n{str(exception)}"
-            )
-            self.status_label.setText("✗ Unbekannter Fehler")
+        # Show error dialog with unified error handling
+        self._show_error_dialog(exception)
 
     def copy_to_clipboard(self):
         """Kopiert den verbesserten Text in die Zwischenablage"""
@@ -664,7 +467,7 @@ class ThesisImproverWindow(QMainWindow):
             return
 
         # Use final text from interactive diff (respects user's accept/reject choices)
-        final_text = self.interactive_diff.get_final_text() if self.interactive_diff else self.improved_text
+        final_text = self._get_final_text()
         clipboard = QApplication.clipboard()
         clipboard.setText(final_text)
 
@@ -676,7 +479,7 @@ class ThesisImproverWindow(QMainWindow):
             return
 
         # Use final text from interactive diff (respects user's accept/reject choices)
-        final_text = self.interactive_diff.get_final_text() if self.interactive_diff else self.improved_text
+        final_text = self._get_final_text()
         self.input_text.setPlainText(final_text)
         self.status_label.setText("✓ Änderungen übernommen")
 
@@ -687,7 +490,7 @@ class ThesisImproverWindow(QMainWindow):
 
         if self.show_diff:
             # Zeige nur den reinen Text (mit aktuellen Auswahlen)
-            final_text = self.interactive_diff.get_final_text() if self.interactive_diff else self.improved_text
+            final_text = self._get_final_text()
             self.output_text.setPlainText(final_text)
             self.toggle_view_button.setText("Unterschiede anzeigen")
             self.show_diff = False
@@ -724,7 +527,7 @@ class ThesisImproverWindow(QMainWindow):
         if filename:
             try:
                 # Use final text from interactive diff (respects user's accept/reject choices)
-                final_text = self.interactive_diff.get_final_text() if self.interactive_diff else self.improved_text
+                final_text = self._get_final_text()
                 with open(filename, 'w', encoding='utf-8') as f:
                     f.write(final_text)
 
@@ -749,14 +552,8 @@ class ThesisImproverWindow(QMainWindow):
         self.original_text = ""
         self.current_analysis = ""
         self.interactive_diff = None
-        self.copy_button.setEnabled(False)
-        self.accept_button.setEnabled(False)
-        self.export_button.setEnabled(False)
-        self.reset_button.setEnabled(False)
-        self.toggle_view_button.setEnabled(False)
-        self.show_analysis_button.setEnabled(False)
-        self.accept_all_button.setEnabled(False)
-        self.reject_all_button.setEnabled(False)
+        # Disable all output buttons
+        self.button_manager.disable_all()
         self.show_diff = True
         self.status_label.setText("Bereit")
 

@@ -3,8 +3,10 @@ OpenRouter API Service für Text-Verbesserung
 """
 
 import json
+import os
 import requests
 from typing import Dict, Any
+from dotenv import load_dotenv
 from prompts import get_prompt, get_prompt_multi_agent
 
 
@@ -33,6 +35,13 @@ class APIService:
 
     BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
 
+    # Default models for multi-agent workflows
+    DEFAULT_MODELS = {
+        'kimi_k2': 'openai/gpt-oss-120b',
+        'claude_opus': 'anthropic/claude-3.5-sonnet',
+        'gpt_52': 'openai/gpt-4o'
+    }
+
     def __init__(self, config_path: str = "config.json"):
         """
         Initialisiert den API Service.
@@ -44,21 +53,58 @@ class APIService:
         self.config = self.load_config()
 
     def load_config(self) -> Dict[str, Any]:
-        """Lädt die Konfiguration aus der JSON-Datei"""
+        """Lädt die Konfiguration aus der JSON-Datei und .env"""
+        # Load environment variables from .env file
+        load_dotenv()
+
         try:
             with open(self.config_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                config = json.load(f)
         except FileNotFoundError:
             # Erstelle Standard-Config wenn nicht vorhanden
-            default_config = {
+            config = {
                 "api_key": "",
                 "model": "anthropic/claude-3.5-sonnet",
-                "timeout": 60
+                "timeout": 180,
+                "models": self.DEFAULT_MODELS.copy(),
+                "system_prompt": "",
+                "thesis_topic": ""
             }
-            self.save_config(default_config)
-            return default_config
+            self.save_config(config)
         except json.JSONDecodeError as e:
             raise APIError(f"Fehler beim Lesen der Config: {e}")
+
+        # Validate and fix config structure
+        config = self._validate_and_fix_config(config)
+
+        # Override API key from environment if present
+        env_key = os.getenv('OPENROUTER_API_KEY')
+        if env_key:
+            config['api_key'] = env_key
+
+        return config
+
+    def _validate_and_fix_config(self, config: dict) -> dict:
+        """Validate config and add missing keys with defaults"""
+
+        # Ensure 'models' exists
+        if 'models' not in config or not isinstance(config['models'], dict):
+            config['models'] = self.DEFAULT_MODELS.copy()
+
+        # Ensure required model keys exist
+        for key, default_model in self.DEFAULT_MODELS.items():
+            if key not in config['models']:
+                config['models'][key] = default_model
+
+        # Ensure other required keys
+        if 'system_prompt' not in config:
+            config['system_prompt'] = ""
+        if 'thesis_topic' not in config:
+            config['thesis_topic'] = ""
+        if 'timeout' not in config:
+            config['timeout'] = 180
+
+        return config
 
     def save_config(self, config: Dict[str, Any]) -> None:
         """Speichert die Konfiguration in die JSON-Datei"""

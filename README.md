@@ -1,8 +1,15 @@
-# Thesis Improver - Multi-Agent Edition
+# MultiAgent-Writer
 
 **Version 2.0** - KI-gestütztes Text-Tool für Masterarbeiten mit Multi-Agent-Workflow
 
 Ein Desktop-Tool zur Unterstützung beim Schreiben wissenschaftlicher Arbeiten, das mehrere KI-Modelle koordiniert für bestmögliche Ergebnisse.
+
+## 📚 Documentation
+
+- **[Architecture Overview](docs/ARCHITECTURE.md)** - System design, multi-agent workflows, components
+- **[API Documentation](docs/API.md)** - Detailed API reference for all classes and methods
+- **[Contributing Guide](CONTRIBUTING.md)** - Development setup and workflow
+- **[README (this file)](README.md)** - Quick start and user guide
 
 ## ✨ Features
 
@@ -66,7 +73,13 @@ pip install -r requirements.txt
 
 ### 4. API-Key konfigurieren
 
-Öffne `config.json` und trage deinen OpenRouter API-Key ein:
+**Empfohlen:** Erstelle eine `.env` Datei im Hauptverzeichnis:
+
+```bash
+echo "OPENROUTER_API_KEY=sk-or-v1-dein_api_key_hier" > .env
+```
+
+**Alternative:** Öffne `config.json` und trage deinen OpenRouter API-Key ein:
 
 ```json
 {
@@ -82,6 +95,8 @@ pip install -r requirements.txt
 ```
 
 **Oder:** Verwende die Einstellungen in der Anwendung (Menü → Einstellungen)
+
+**Hinweis:** Die `.env` Datei ist sicherer, da sie nicht versehentlich ins Repository committed wird.
 
 ## 🎯 Verwendung
 
@@ -212,6 +227,8 @@ Diese Analyse wird dann von GPT-5.2 verwendet, um den Text präzise zu verbesser
 
 ## 🔨 Entwicklung
 
+Für detaillierte Informationen zur Entwicklung, siehe **[Contributing Guide](CONTRIBUTING.md)**.
+
 ### Requirements
 
 Siehe `requirements.txt`:
@@ -223,13 +240,35 @@ Siehe `requirements.txt`:
 
 ```
 MultiAgent-Writer/
-├── main.py              # GUI & Hauptlogik
-├── api_service.py       # Multi-Agent API-Integration
-├── text_processor.py    # Diff-Generierung
-├── prompts.py           # Multi-Agent Prompts
-├── config.json          # Konfiguration
-└── requirements.txt     # Dependencies
+├── src/
+│   └── multiagent_writer/
+│       ├── main.py              # Entry point
+│       ├── ui/                  # PyQt6 UI components
+│       │   ├── main_window.py
+│       │   ├── dialogs.py
+│       │   ├── workers.py
+│       │   └── button_manager.py
+│       ├── api/                 # OpenRouter API integration
+│       │   ├── service.py
+│       │   ├── client.py
+│       │   └── errors.py
+│       ├── core/                # Core business logic
+│       │   └── text_processor.py
+│       ├── prompts/             # LLM prompt templates
+│       │   └── templates.py
+│       └── config/              # Configuration
+│           ├── config_manager.py
+│           └── constants.py
+├── docs/                        # Documentation
+│   ├── ARCHITECTURE.md
+│   └── API.md
+├── .env                         # API key (git-ignored)
+├── config.json                  # User settings (git-ignored)
+├── CONTRIBUTING.md              # Development guide
+└── requirements.txt             # Dependencies
 ```
+
+Siehe **[Architecture Overview](docs/ARCHITECTURE.md)** für Details zur Systemarchitektur.
 
 ### Testing
 
