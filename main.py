@@ -8,13 +8,43 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTextEdit, QPushButton, QComboBox, QLabel, QSplitter, QMessageBox,
     QFileDialog, QMenuBar, QMenu, QDialog, QLineEdit, QFormLayout, QDialogButtonBox,
-    QTextBrowser
+    QTextBrowser, QProgressDialog, QPlainTextEdit
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QAction, QKeySequence
 
 from api_service import APIService, APIError, NetworkError, RateLimitError, AuthenticationError
 from text_processor import TextProcessor, InteractiveDiff, ChangeState
+
+
+class APIWorker(QThread):
+    """Background worker for API calls"""
+    progress = pyqtSignal(str)  # Status message
+    finished = pyqtSignal(dict)  # Result
+    error = pyqtSignal(Exception)  # Error
+
+    def __init__(self, api_service, mode, text, parent=None):
+        super().__init__(parent)
+        self.api_service = api_service
+        self.mode = mode
+        self.text = text
+
+    def run(self):
+        """Execute API call in background thread"""
+        try:
+            if self.mode == "ausformulieren":
+                result = self.api_service.improve_text_ausformulieren(
+                    self.text,
+                    status_callback=lambda msg: self.progress.emit(msg)
+                )
+            else:  # korrekturlesen
+                result = self.api_service.improve_text_korrekturlesen(
+                    self.text,
+                    status_callback=lambda msg: self.progress.emit(msg)
+                )
+            self.finished.emit(result)
+        except Exception as e:
+            self.error.emit(e)
 
 
 class AnalysisDialog(QDialog):
@@ -269,7 +299,9 @@ class ThesisImproverWindow(QMainWindow):
 
         left_label = QLabel("Original-Text:")
         left_label.setStyleSheet("font-weight: bold;")
-        self.input_text = QTextEdit()
+
+        # Use QPlainTextEdit for input (doesn't support rich text, ignores clipboard formatting)
+        self.input_text = QPlainTextEdit()
         self.input_text.setPlaceholderText(
             "Gib hier deinen Text ein...\n\n"
             "Beispiel für 'Ausformulieren':\n"
@@ -279,6 +311,18 @@ class ThesisImproverWindow(QMainWindow):
             "Beispiel für 'Korrekturlesen':\n"
             "Die künstliche Inteligenz ist ein wichtiger Faktor für die zukunft."
         )
+
+        # Apply explicit styling (white bg, black text, resistant to clipboard/dark mode)
+        self.input_text.setStyleSheet("""
+            QPlainTextEdit {
+                background-color: #FFFFFF;
+                color: #000000;
+                font-family: 'Segoe UI', Arial, sans-serif;
+                font-size: 11pt;
+                selection-background-color: #0078D7;
+                selection-color: #FFFFFF;
+            }
+        """)
 
         left_layout.addWidget(left_label)
         left_layout.addWidget(self.input_text)
@@ -312,6 +356,17 @@ class ThesisImproverWindow(QMainWindow):
         self.output_text.setOpenExternalLinks(False)  # Handle clicks internally
         self.output_text.anchorClicked.connect(self.handle_change_click)
         self.output_text.setPlaceholderText("Hier erscheint der verbesserte Text...")
+
+        # Apply minimal styling (white bg, but allow HTML colors for diff)
+        self.output_text.setStyleSheet("""
+            QTextBrowser {
+                background-color: #FFFFFF;
+                font-family: 'Segoe UI', Arial, sans-serif;
+                font-size: 11pt;
+                selection-background-color: #0078D7;
+                selection-color: #FFFFFF;
+            }
+        """)
 
         right_layout.addWidget(self.output_text)
 
@@ -470,101 +525,129 @@ class ThesisImproverWindow(QMainWindow):
         self.process_button.setEnabled(False)
         mode = self.mode_combo.currentText()
 
-        try:
-            if mode == "ausformulieren":
-                # 3-Schritt-Prozess: Kimi K2 → Opus 4.5 → GPT-5.2
-                self.status_label.setText("⏳ Starte Multi-Agent-Prozess (3 Schritte)...")
-                QApplication.processEvents()
+        # Create progress dialog
+        self.progress_dialog = QProgressDialog(
+            "Verarbeite Text...",
+            "Abbrechen",
+            0, 0,  # Indeterminate (no specific range)
+            self
+        )
+        self.progress_dialog.setWindowTitle("Bitte warten")
+        self.progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        self.progress_dialog.setMinimumDuration(0)  # Show immediately
+        self.progress_dialog.setAutoClose(True)
+        self.progress_dialog.setCancelButton(None)  # Disable cancel for now (API calls can't be canceled mid-flight)
 
-                result = self.api_service.improve_text_ausformulieren(
-                    input_text,
-                    status_callback=self.update_status
-                )
+        # Create worker thread
+        self.worker = APIWorker(self.api_service, mode, input_text, self)
 
-                # Analyse und finalen Text speichern
-                self.current_analysis = result['step2_analysis']
-                self.improved_text = result['step3_final']
+        # Connect signals
+        self.worker.progress.connect(self.update_progress)
+        self.worker.finished.connect(self.on_api_success)
+        self.worker.error.connect(self.on_api_error)
 
-            else:  # korrekturlesen
-                # 2-Schritt-Prozess: Opus 4.5 → GPT-5.2
-                self.status_label.setText("⏳ Starte Multi-Agent-Prozess (2 Schritte)...")
-                QApplication.processEvents()
+        # Start processing
+        self.status_label.setText("⏳ Starte Multi-Agent-Prozess...")
+        self.worker.start()
 
-                result = self.api_service.improve_text_korrekturlesen(
-                    input_text,
-                    status_callback=self.update_status
-                )
+    def update_progress(self, message):
+        """Update progress dialog label"""
+        if hasattr(self, 'progress_dialog') and self.progress_dialog:
+            self.progress_dialog.setLabelText(message)
+        self.status_label.setText(message)
+        QApplication.processEvents()
 
-                # Analyse und finalen Text speichern
-                self.current_analysis = result['step1_analysis']
-                self.improved_text = result['step2_final']
+    def on_api_success(self, result):
+        """Handle successful API response"""
+        # Close progress dialog
+        if hasattr(self, 'progress_dialog') and self.progress_dialog:
+            self.progress_dialog.close()
 
-            # Original-Text speichern
-            self.original_text = input_text
+        mode = self.mode_combo.currentText()
 
-            # Create interactive diff and display
-            self.interactive_diff = InteractiveDiff(input_text, self.improved_text)
-            html_diff = self.interactive_diff.generate_interactive_html()
-            self.output_text.setHtml(html_diff)
+        # Extract analysis and final text based on mode
+        if mode == "ausformulieren":
+            self.current_analysis = result['step2_analysis']
+            self.improved_text = result['step3_final']
+        else:  # korrekturlesen
+            self.current_analysis = result['step1_analysis']
+            self.improved_text = result['step2_final']
 
-            # Buttons aktivieren
-            self.show_analysis_button.setEnabled(True)
-            self.copy_button.setEnabled(True)
-            self.accept_button.setEnabled(True)
-            self.export_button.setEnabled(True)
-            self.reset_button.setEnabled(True)
-            self.toggle_view_button.setEnabled(True)
-            self.accept_all_button.setEnabled(True)
-            self.reject_all_button.setEnabled(True)
-            self.show_diff = True
-            self.toggle_view_button.setText("Nur Text anzeigen")
+        # Original-Text speichern
+        self.original_text = self.input_text.toPlainText().strip()
 
-            # Update status with statistics
-            self.update_diff_statistics()
+        # Create interactive diff and display
+        self.interactive_diff = InteractiveDiff(self.original_text, self.improved_text)
+        html_diff = self.interactive_diff.generate_interactive_html()
+        self.output_text.setHtml(html_diff)
 
-        except AuthenticationError as e:
+        # Buttons aktivieren
+        self.show_analysis_button.setEnabled(True)
+        self.copy_button.setEnabled(True)
+        self.accept_button.setEnabled(True)
+        self.export_button.setEnabled(True)
+        self.reset_button.setEnabled(True)
+        self.toggle_view_button.setEnabled(True)
+        self.accept_all_button.setEnabled(True)
+        self.reject_all_button.setEnabled(True)
+        self.show_diff = True
+        self.toggle_view_button.setText("Nur Text anzeigen")
+
+        # Update status with statistics
+        self.update_diff_statistics()
+
+        # Re-enable process button
+        self.process_button.setEnabled(True)
+
+    def on_api_error(self, exception):
+        """Handle API error"""
+        # Close progress dialog
+        if hasattr(self, 'progress_dialog') and self.progress_dialog:
+            self.progress_dialog.close()
+
+        # Re-enable process button
+        self.process_button.setEnabled(True)
+
+        # Show appropriate error message
+        if isinstance(exception, AuthenticationError):
             QMessageBox.critical(
                 self,
                 "Authentifizierungs-Fehler",
-                f"{str(e)}\n\nBitte gehe zu Einstellungen und trage einen gültigen API-Key ein."
+                f"{str(exception)}\n\nBitte gehe zu Einstellungen und trage einen gültigen API-Key ein."
             )
             self.status_label.setText("✗ Fehler: Ungültiger API-Key")
 
-        except NetworkError as e:
+        elif isinstance(exception, NetworkError):
             QMessageBox.critical(
                 self,
                 "Netzwerk-Fehler",
-                f"{str(e)}\n\nBitte prüfe deine Internetverbindung."
+                f"{str(exception)}\n\nBitte prüfe deine Internetverbindung."
             )
             self.status_label.setText("✗ Fehler: Keine Verbindung")
 
-        except RateLimitError as e:
+        elif isinstance(exception, RateLimitError):
             QMessageBox.warning(
                 self,
                 "Rate Limit",
-                f"{str(e)}\n\nBitte warte einen Moment und versuche es erneut."
+                f"{str(exception)}\n\nBitte warte einen Moment und versuche es erneut."
             )
             self.status_label.setText("✗ Zu viele Anfragen")
 
-        except APIError as e:
+        elif isinstance(exception, APIError):
             QMessageBox.critical(
                 self,
                 "API-Fehler",
-                f"Ein Fehler ist aufgetreten:\n{str(e)}"
+                f"Ein Fehler ist aufgetreten:\n{str(exception)}"
             )
             self.status_label.setText("✗ API-Fehler")
 
-        except Exception as e:
+        else:
             QMessageBox.critical(
                 self,
                 "Unbekannter Fehler",
-                f"Ein unerwarteter Fehler ist aufgetreten:\n{str(e)}"
+                f"Ein unerwarteter Fehler ist aufgetreten:\n{str(exception)}"
             )
             self.status_label.setText("✗ Unbekannter Fehler")
-
-        finally:
-            # UI wieder aktivieren
-            self.process_button.setEnabled(True)
 
     def copy_to_clipboard(self):
         """Kopiert den verbesserten Text in die Zwischenablage"""

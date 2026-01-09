@@ -126,17 +126,17 @@ class InteractiveDiff:
 
         if change.operation == 'delete':
             if change.state == ChangeState.ACCEPTED:
-                # Accepted deletion: show with confirmation (light gray background)
+                # Accepted deletion: show with dark green text + strikethrough
                 return (f'<a href="#{change.change_id}" style="{cursor_style} '
-                       f'background-color: #f0f0f0; text-decoration: line-through; '
-                       f'color: #999;" {tooltip}>{change.original_text}</a>')
+                       f'color: #2e7d32; background-color: transparent; '
+                       f'text-decoration: line-through;" {tooltip}>{change.original_text}</a>')
             elif change.state == ChangeState.REJECTED:
-                # Rejected deletion: show original without strikethrough (green border = kept)
+                # Rejected deletion: show with dark red text (deletion rejected, kept original)
                 return (f'<a href="#{change.change_id}" style="{cursor_style} '
-                       f'background-color: #e8f5e9; border: 2px solid #4caf50; '
-                       f'padding: 2px 4px; border-radius: 3px;" '
+                       f'color: #c62828; background-color: transparent;" '
                        f'{tooltip}>{change.original_text}</a>')
             else:  # PENDING
+                # Pending deletion: red background + strikethrough
                 return (f'<a href="#{change.change_id}" style="{cursor_style} '
                        f'background-color: {TextProcessor.COLOR_DELETION}; '
                        f'text-decoration: line-through; padding: 2px 4px;" '
@@ -144,18 +144,17 @@ class InteractiveDiff:
 
         elif change.operation == 'insert':
             if change.state == ChangeState.ACCEPTED:
-                # Accepted insertion: show with confirmation (green border)
+                # Accepted insertion: dark green text on white
                 return (f'<a href="#{change.change_id}" style="{cursor_style} '
-                       f'background-color: #e8f5e9; border: 2px solid #4caf50; '
-                       f'padding: 2px 4px; border-radius: 3px;" '
+                       f'color: #2e7d32; background-color: transparent;" '
                        f'{tooltip}>{change.modified_text}</a>')
             elif change.state == ChangeState.REJECTED:
-                # Rejected insertion: show crossed out
+                # Rejected insertion: dark red text with strikethrough (not included)
                 return (f'<a href="#{change.change_id}" style="{cursor_style} '
-                       f'background-color: #f0f0f0; text-decoration: line-through; '
-                       f'color: #999; padding: 2px 4px;" '
-                       f'{tooltip}>{change.modified_text}</a>')
+                       f'color: #c62828; background-color: transparent; '
+                       f'text-decoration: line-through;" {tooltip}>{change.modified_text}</a>')
             else:  # PENDING
+                # Pending insertion: green background
                 return (f'<a href="#{change.change_id}" style="{cursor_style} '
                        f'background-color: {TextProcessor.COLOR_ADDITION}; '
                        f'padding: 2px 4px;" '
@@ -163,19 +162,17 @@ class InteractiveDiff:
 
         elif change.operation == 'replace':
             if change.state == ChangeState.ACCEPTED:
-                # Accepted: show new version with confirmation (green border)
+                # Accepted replacement: dark green text on white (new version)
                 return (f'<a href="#{change.change_id}" style="{cursor_style} '
-                       f'background-color: #e8f5e9; border: 2px solid #4caf50; '
-                       f'padding: 2px 4px; border-radius: 3px;" '
+                       f'color: #2e7d32; background-color: transparent;" '
                        f'{tooltip}>{change.modified_text}</a>')
             elif change.state == ChangeState.REJECTED:
-                # Rejected: show original with confirmation (red border)
+                # Rejected replacement: dark red text on white (original kept)
                 return (f'<a href="#{change.change_id}" style="{cursor_style} '
-                       f'background-color: #ffebee; border: 2px solid #f44336; '
-                       f'padding: 2px 4px; border-radius: 3px;" '
+                       f'color: #c62828; background-color: transparent;" '
                        f'{tooltip}>{change.original_text}</a>')
             else:  # PENDING
-                # Show both: old (red, strikethrough) → new (green)
+                # Pending replacement: old (red bg, strikethrough) → new (green bg)
                 return (f'<a href="#{change.change_id}" style="{cursor_style} '
                        f'background-color: {TextProcessor.COLOR_DELETION}; '
                        f'text-decoration: line-through; padding: 2px 4px;" '
