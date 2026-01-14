@@ -269,13 +269,13 @@ class InteractiveDiff:
                        f'data-state="{state_name}" '
                        f'data-operation="{change.operation}" '
                        f'title="{tooltip}">'
-                       f'{icon} {change.original_text}</a>')
+                       f'{change.original_text}</a>')
             new_part = (f'<a href="#{change.change_id}" '
                        f'class="change change-insert change-pending" '
                        f'data-state="{state_name}" '
                        f'data-operation="{change.operation}" '
                        f'title="{tooltip}">'
-                       f'{icon} {change.modified_text}</a>')
+                       f'{change.modified_text}</a>')
             return f'{old_part} {new_part}'
 
         # Standard rendering for all other cases
@@ -284,7 +284,7 @@ class InteractiveDiff:
                f'data-state="{state_name}" '
                f'data-operation="{change.operation}" '
                f'title="{tooltip}">'
-               f'{icon} {text}</a>')
+               f'{text}</a>')
 
 
 class TextProcessor:

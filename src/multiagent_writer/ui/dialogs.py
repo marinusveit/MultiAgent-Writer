@@ -10,21 +10,22 @@ from PyQt6.QtCore import Qt
 
 
 class AnalysisDialog(QDialog):
-    """Dialog zur Anzeige der Claude Opus 4.5 Analyse"""
+    """Dialog zur Anzeige der Analyse"""
 
-    def __init__(self, analysis_text: str, parent=None):
+    def __init__(self, analysis_text: str, model_name: str = "Claude Opus 4.5", parent=None):
         super().__init__(parent)
+        self.model_name = model_name
         self.init_ui(analysis_text)
 
     def init_ui(self, analysis_text):
         """Initialisiert den Analyse-Dialog"""
-        self.setWindowTitle("Claude Opus 4.5 - Detaillierte Textanalyse")
+        self.setWindowTitle(f"{self.model_name} - Detaillierte Textanalyse")
         self.setMinimumSize(900, 700)
 
         layout = QVBoxLayout(self)
 
         # Überschrift
-        header_label = QLabel("<h2>📊 Analyse von Claude Opus 4.5</h2>")
+        header_label = QLabel(f"<h2>📊 Analyse von {self.model_name}</h2>")
         header_label.setStyleSheet("color: #2c3e50; padding: 10px;")
         layout.addWidget(header_label)
 
@@ -45,8 +46,8 @@ class AnalysisDialog(QDialog):
 
         # Info-Text
         info_label = QLabel(
-            "<i>💡 Diese Analyse wurde von Claude Opus 4.5 erstellt und dient als Grundlage "
-            "für die Textverbesserung durch GPT-5.2.</i>"
+            f"<i>💡 Diese Analyse wurde von {self.model_name} erstellt und dient als Grundlage "
+            "für die Textverbesserung.</i>"
         )
         info_label.setWordWrap(True)
         info_label.setStyleSheet("color: #6c757d; padding: 5px;")

@@ -47,6 +47,10 @@ class ConfigManager:
         config = self._load_json()
         config = self._validate_and_fix(config)
 
+        # Apply model quality tier
+        quality = config.get('model_quality', 'guenstig')
+        config['models'] = self.get_models_for_quality(quality)
+
         # Override API key from environment if present
         env_key = os.getenv('OPENROUTER_API_KEY')
         if env_key:
@@ -64,12 +68,29 @@ class ConfigManager:
         with open(self.config_path, 'w', encoding='utf-8') as f:
             json.dump(config, f, indent=4, ensure_ascii=False)
 
+    def get_models_for_quality(self, quality: str) -> Dict[str, str]:
+        """
+        Get model configuration for specified quality tier.
+
+        Args:
+            quality: Quality tier identifier (e.g., "guenstig", "high_end")
+
+        Returns:
+            Dictionary mapping model keys to model IDs
+        """
+        from .constants import ModelQuality
+        return ModelQuality.CONFIGURATIONS.get(
+            quality,
+            ModelQuality.CONFIGURATIONS[ModelQuality.CHEAP]
+        )
+
     def _create_default_config(self) -> Dict[str, Any]:
         """Create default configuration"""
         default = {
             "api_key": "",
             "model": "anthropic/claude-3.5-sonnet",
             "timeout": 180,
+            "model_quality": "guenstig",  # Default to cheap tier
             "models": self.DEFAULT_MODELS.copy(),
             "system_prompt": "",
             "thesis_topic": ""
@@ -115,5 +136,7 @@ class ConfigManager:
             config['model'] = "anthropic/claude-3.5-sonnet"
         if 'api_key' not in config:
             config['api_key'] = ""
+        if 'model_quality' not in config:
+            config['model_quality'] = "guenstig"
 
         return config

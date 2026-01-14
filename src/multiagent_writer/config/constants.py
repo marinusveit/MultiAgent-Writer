@@ -95,3 +95,40 @@ class DiffStyle:
     BORDER_WIDTH_HOVER = "2px"
     BOX_SHADOW_HOVER = "0 2px 4px rgba(0,0,0,0.15)"
     TRANSITION = "all 0.2s ease"
+
+
+class ModelQuality:
+    """Model quality tier configurations"""
+
+    # Quality tier identifiers
+    CHEAP = "guenstig"
+    HIGH_END = "high_end"
+
+    # Display names for quality tiers
+    DISPLAY_NAMES = {
+        CHEAP: "Günstig",
+        HIGH_END: "High-End"
+    }
+
+    # Model configurations for each quality tier
+    CONFIGURATIONS = {
+        CHEAP: {
+            'kimi_k2': 'openai/gpt-oss-120b',
+            'claude_opus': 'openai/gpt-oss-120b',
+            'gpt_52': 'openai/gpt-oss-120b'
+        },
+        HIGH_END: {
+            'kimi_k2': 'openai/gpt-oss-120b',  # Keep cheap for step 1
+            'claude_opus': 'anthropic/claude-opus-4-5-20251101',
+            'gpt_52': 'openai/chatgpt-4o-latest'  # GPT-5.2
+        }
+    }
+
+    # User-friendly model names for display
+    MODEL_DISPLAY_NAMES = {
+        'openai/gpt-oss-120b': 'GPT-OSS-120B',
+        'anthropic/claude-opus-4-5-20251101': 'Claude Opus 4.5',
+        'openai/chatgpt-4o-latest': 'GPT-5.2',
+        'anthropic/claude-3.5-sonnet': 'Claude 3.5 Sonnet',
+        'openai/gpt-4o': 'GPT-4o'
+    }

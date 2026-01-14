@@ -15,6 +15,7 @@ from PyQt6.QtGui import QAction, QKeySequence
 # Import from new structure
 from ..compat_api_service import APIService
 from ..api.errors import APIError, NetworkError, RateLimitError, AuthenticationError
+from ..api.service import TextImprovementService
 from ..core.text_processor import TextProcessor, InteractiveDiff, ChangeState
 
 # Import UI components from new structure
@@ -39,6 +40,15 @@ class ThesisImproverWindow(QMainWindow):
 
         self.init_ui()
 
+        # Set initial quality selection from config
+        quality = self.api_service.config.get('model_quality', 'guenstig')
+        index = self.quality_combo.findData(quality)
+        if index >= 0:
+            self.quality_combo.setCurrentIndex(index)
+
+        # Update mode tooltip with current model names
+        self._update_mode_tooltip()
+
     def init_ui(self):
         """Initialisiert die Benutzeroberfläche"""
 
@@ -59,16 +69,25 @@ class ThesisImproverWindow(QMainWindow):
         mode_label = QLabel("Modus:")
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(["ausformulieren", "korrekturlesen"])
-        self.mode_combo.setToolTip(
-            "Ausformulieren: Kimi K2 → Opus 4.5 (Analyse) → GPT-5.2 (Umsetzung)\n"
-            "Korrekturlesen: Opus 4.5 (Analyse) → GPT-5.2 (Umsetzung)\n\n"
-            "⚠️ Nutzt mehrere Modelle - höhere Kosten!"
-        )
+        # Tooltip will be set dynamically after config is loaded
         # Signal: Button-Text aktualisieren, wenn Modus geändert wird
         self.mode_combo.currentTextChanged.connect(self.update_process_button_text)
 
+        # Model quality selection
+        quality_label = QLabel("Modell-Qualität:")
+        self.quality_combo = QComboBox()
+        self.quality_combo.addItem("Günstig", "guenstig")
+        self.quality_combo.addItem("High-End", "high_end")
+        self.quality_combo.setToolTip(
+            "Günstig: Schneller und kostengünstiger (GPT-OSS-120B)\n"
+            "High-End: Bessere Qualität, höhere Kosten (Claude Opus 4.5, GPT-5.2)"
+        )
+        self.quality_combo.currentIndexChanged.connect(self.on_quality_changed)
+
         controls_layout.addWidget(mode_label)
         controls_layout.addWidget(self.mode_combo)
+        controls_layout.addWidget(quality_label)
+        controls_layout.addWidget(self.quality_combo)
         controls_layout.addStretch()
 
         main_layout.addLayout(controls_layout)
@@ -195,7 +214,7 @@ class ThesisImproverWindow(QMainWindow):
         self.reset_button.setEnabled(False)
 
         self.show_analysis_button = QPushButton("📊 Analyse anzeigen")
-        self.show_analysis_button.setToolTip("Zeigt die detaillierte Analyse von Claude Opus 4.5")
+        # Tooltip will be set dynamically after config is loaded
         self.show_analysis_button.clicked.connect(self.show_analysis_dialog)
         self.show_analysis_button.setEnabled(False)
 
@@ -284,6 +303,29 @@ class ThesisImproverWindow(QMainWindow):
             self.progress_dialog.close()
             self.progress_dialog = None
 
+    def _get_model_display_name(self, model_key: str) -> str:
+        """Get user-friendly display name for model"""
+        from ..config.constants import ModelQuality
+        model_id = self.api_service.config['models'].get(model_key, '')
+        return ModelQuality.MODEL_DISPLAY_NAMES.get(model_id, model_id)
+
+    def _update_mode_tooltip(self):
+        """Update mode combo tooltip with current model names"""
+        kimi = self._get_model_display_name('kimi_k2')
+        opus = self._get_model_display_name('claude_opus')
+        gpt = self._get_model_display_name('gpt_52')
+
+        self.mode_combo.setToolTip(
+            f"Ausformulieren: {kimi} → {opus} (Analyse) → {gpt} (Umsetzung)\n"
+            f"Korrekturlesen: {opus} (Analyse) → {gpt} (Umsetzung)\n\n"
+            "⚠️ Nutzt mehrere Modelle - höhere Kosten!"
+        )
+
+        # Also update analysis button tooltip
+        self.show_analysis_button.setToolTip(
+            f"Zeigt die detaillierte Analyse von {opus}"
+        )
+
     def _get_final_text(self) -> str:
         """Gets final text respecting user's accept/reject choices"""
         if self.interactive_diff:
@@ -357,6 +399,29 @@ class ThesisImproverWindow(QMainWindow):
         button_text = "Ausformulieren" if mode == "ausformulieren" else "Korrektur lesen"
         self.process_button.setText(button_text)
         self.process_button.setToolTip(f"{button_text} (Ctrl+Enter)")
+
+    def on_quality_changed(self, index):
+        """Handle model quality selection change"""
+        from ..config.constants import ModelQuality
+
+        quality = self.quality_combo.currentData()
+
+        # Update config
+        self.api_service.config['model_quality'] = quality
+        self.api_service.config_manager.save(self.api_service.config)
+
+        # Reload config to apply new models
+        self.api_service.config = self.api_service.config_manager.load()
+
+        # Reinitialize service with new config
+        self.api_service.service = TextImprovementService(self.api_service.config)
+
+        # Update mode tooltip with new model names
+        self._update_mode_tooltip()
+
+        # Update status
+        quality_name = ModelQuality.DISPLAY_NAMES.get(quality, quality)
+        self.update_status(f"Modell-Qualität: {quality_name}")
 
     def process_text(self):
         """Verarbeitet den Text mit Multi-Agent-Workflow"""
@@ -623,7 +688,7 @@ class ThesisImproverWindow(QMainWindow):
         self.update_diff_statistics()
 
     def show_analysis_dialog(self):
-        """Zeigt die detaillierte Analyse von Claude Opus 4.5"""
+        """Zeigt die detaillierte Analyse"""
         if not self.current_analysis:
             QMessageBox.information(
                 self,
@@ -633,7 +698,8 @@ class ThesisImproverWindow(QMainWindow):
             )
             return
 
-        dialog = AnalysisDialog(self.current_analysis, self)
+        opus_name = self._get_model_display_name('claude_opus')
+        dialog = AnalysisDialog(self.current_analysis, opus_name, self)
         dialog.exec()
 
     def show_settings(self):
@@ -643,6 +709,11 @@ class ThesisImproverWindow(QMainWindow):
 
     def show_about(self):
         """Zeigt den Über-Dialog"""
+        # Get dynamic model names
+        kimi = self._get_model_display_name('kimi_k2')
+        opus = self._get_model_display_name('claude_opus')
+        gpt = self._get_model_display_name('gpt_52')
+
         QMessageBox.about(
             self,
             "Über Thesis Improver",
@@ -651,13 +722,13 @@ class ThesisImproverWindow(QMainWindow):
             "<p>KI-gestütztes Text-Tool für Masterarbeiten</p>"
             "<p><b>Multi-Agent-Workflows:</b></p>"
             "<ul>"
-            "<li><b>Ausformulieren:</b> Kimi K2 → Opus 4.5 → GPT-5.2</li>"
-            "<li><b>Korrekturlesen:</b> Opus 4.5 → GPT-5.2</li>"
+            f"<li><b>Ausformulieren:</b> {kimi} → {opus} → {gpt}</li>"
+            f"<li><b>Korrekturlesen:</b> {opus} → {gpt}</li>"
             "</ul>"
             "<p><b>Features:</b></p>"
             "<ul>"
             "<li>Diff-Ansicht mit farblichen Markierungen</li>"
-            "<li>Detaillierte Analyse von Claude Opus 4.5</li>"
+            f"<li>Detaillierte Analyse von {opus}</li>"
             "<li>Export-Funktion</li>"
             "</ul>"
             "<p><b>Powered by:</b> OpenRouter API</p>"

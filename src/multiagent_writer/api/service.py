@@ -31,6 +31,12 @@ class TextImprovementService:
             timeout=config.get('timeout', 180)
         )
 
+    def _get_model_display_name(self, model_key: str) -> str:
+        """Get user-friendly display name for model"""
+        from ..config.constants import ModelQuality
+        model_id = self.config['models'].get(model_key, '')
+        return ModelQuality.MODEL_DISPLAY_NAMES.get(model_id, model_id)
+
     def improve_text_ausformulieren(
         self,
         text: str,
@@ -70,7 +76,8 @@ class TextImprovementService:
 
         # Schritt 1: Kimi K2 ausformulieren
         if status_callback:
-            status_callback("Schritt 1/3: Kimi K2 formuliert aus...")
+            kimi_name = self._get_model_display_name('kimi_k2')
+            status_callback(f"Schritt 1/3: {kimi_name} formuliert aus...")
 
         prompt_kimi = get_prompt_multi_agent(
             "ausformulieren", "kimi_k2", text,
@@ -81,7 +88,8 @@ class TextImprovementService:
 
         # Schritt 2: Opus 4.5 Analyse
         if status_callback:
-            status_callback("Schritt 2/3: Claude Opus 4.5 analysiert...")
+            opus_name = self._get_model_display_name('claude_opus')
+            status_callback(f"Schritt 2/3: {opus_name} analysiert...")
 
         prompt_opus = get_prompt_multi_agent(
             "ausformulieren", "opus_analyse", step1_kimi,
@@ -92,7 +100,8 @@ class TextImprovementService:
 
         # Schritt 3: GPT-5.2 Umsetzung
         if status_callback:
-            status_callback("Schritt 3/3: GPT-5.2 setzt um...")
+            gpt_name = self._get_model_display_name('gpt_52')
+            status_callback(f"Schritt 3/3: {gpt_name} setzt um...")
 
         prompt_gpt = get_prompt_multi_agent(
             "ausformulieren", "gpt_umsetzung", step1_kimi, step2_analysis,
@@ -144,7 +153,8 @@ class TextImprovementService:
 
         # Schritt 1: Opus 4.5 Analyse
         if status_callback:
-            status_callback("Schritt 1/2: Claude Opus 4.5 analysiert...")
+            opus_name = self._get_model_display_name('claude_opus')
+            status_callback(f"Schritt 1/2: {opus_name} analysiert...")
 
         prompt_opus = get_prompt_multi_agent(
             "korrekturlesen", "opus_analyse", text,
@@ -155,7 +165,8 @@ class TextImprovementService:
 
         # Schritt 2: GPT-5.2 Umsetzung
         if status_callback:
-            status_callback("Schritt 2/2: GPT-5.2 setzt um...")
+            gpt_name = self._get_model_display_name('gpt_52')
+            status_callback(f"Schritt 2/2: {gpt_name} setzt um...")
 
         prompt_gpt = get_prompt_multi_agent(
             "korrekturlesen", "gpt_umsetzung", text, step1_analysis,
