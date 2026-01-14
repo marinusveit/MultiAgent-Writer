@@ -103,9 +103,125 @@ class InteractiveDiff:
 
         return ' '.join(result_words)
 
+    def _generate_css(self) -> str:
+        """Generate CSS stylesheet for interactive diff"""
+        from ..config.constants import DiffColors, DiffStyle
+
+        return f"""
+        <style>
+            /* Base change styling */
+            .change {{
+                cursor: pointer;
+                padding: {DiffStyle.PADDING};
+                margin: {DiffStyle.MARGIN};
+                border-radius: {DiffStyle.BORDER_RADIUS};
+                border: {DiffStyle.BORDER_WIDTH} solid transparent;
+                text-decoration: none;
+                display: inline-block;
+                transition: {DiffStyle.TRANSITION};
+            }}
+
+            /* Pending state base */
+            .change-pending {{
+                border-color: {DiffColors.BORDER_PENDING};
+            }}
+
+            /* Delete operation (pending) */
+            .change-delete.change-pending {{
+                background-color: {DiffColors.DELETION};
+                text-decoration: line-through;
+            }}
+
+            /* Insert operation (pending) */
+            .change-insert.change-pending {{
+                background-color: {DiffColors.ADDITION};
+            }}
+
+            /* Accepted state */
+            .change-accepted {{
+                color: {DiffColors.ACCEPTED_COLOR};
+                background-color: transparent;
+                border-color: {DiffColors.BORDER_ACCEPTED};
+            }}
+
+            /* Rejected state */
+            .change-rejected {{
+                color: {DiffColors.REJECTED_COLOR};
+                background-color: transparent;
+                border-color: {DiffColors.BORDER_REJECTED};
+            }}
+
+            /* Hover effects - pending */
+            .change-pending:hover {{
+                border-width: {DiffStyle.BORDER_WIDTH_HOVER};
+                border-color: {DiffColors.BORDER_HOVER_PENDING};
+                box-shadow: {DiffStyle.BOX_SHADOW_HOVER};
+            }}
+
+            .change-delete.change-pending:hover {{
+                background-color: {DiffColors.DELETION_HOVER};
+            }}
+
+            .change-insert.change-pending:hover {{
+                background-color: {DiffColors.ADDITION_HOVER};
+            }}
+
+            /* Hover effects - accepted */
+            .change-accepted:hover {{
+                border-width: {DiffStyle.BORDER_WIDTH_HOVER};
+                border-color: {DiffColors.BORDER_HOVER_ACCEPTED};
+                color: {DiffColors.ACCEPTED_HOVER};
+                box-shadow: {DiffStyle.BOX_SHADOW_HOVER};
+            }}
+
+            /* Hover effects - rejected */
+            .change-rejected:hover {{
+                border-width: {DiffStyle.BORDER_WIDTH_HOVER};
+                border-color: {DiffColors.BORDER_HOVER_REJECTED};
+                color: {DiffColors.REJECTED_HOVER};
+                box-shadow: {DiffStyle.BOX_SHADOW_HOVER};
+            }}
+
+            /* Strikethrough for deletions/rejections */
+            .change-delete.change-pending,
+            .change-delete.change-accepted {{
+                text-decoration: line-through;
+            }}
+
+            .change-insert.change-rejected {{
+                text-decoration: line-through;
+            }}
+        </style>
+        """
+
+    def _get_state_icon(self, change: DiffChange) -> str:
+        """Get visual icon for change state"""
+        if change.state == ChangeState.PENDING:
+            return "◯"
+        elif change.state == ChangeState.ACCEPTED:
+            return "✓"
+        elif change.state == ChangeState.REJECTED:
+            return "✗"
+        return ""
+
+    def _get_tooltip(self, change: DiffChange) -> str:
+        """Get state-specific tooltip text"""
+        if change.state == ChangeState.PENDING:
+            return "🖱️ Klicken um zu akzeptieren/ablehnen"
+        elif change.state == ChangeState.ACCEPTED:
+            return "✓ Akzeptiert - Klicken um Status zu ändern"
+        elif change.state == ChangeState.REJECTED:
+            return "✗ Abgelehnt - Klicken um Status zu ändern"
+        return "Klicken um zu ändern"
+
     def generate_interactive_html(self) -> str:
         """Generate HTML with clickable changes"""
         html_parts = []
+
+        # Add CSS stylesheet
+        html_parts.append(self._generate_css())
+
+        # Add content wrapper
         html_parts.append('<div style="font-family: Arial, sans-serif; line-height: 1.8; padding: 10px;">')
 
         for change in self.changes:
@@ -120,69 +236,55 @@ class InteractiveDiff:
         return ''.join(html_parts)
 
     def _render_change(self, change: DiffChange) -> str:
-        """Render a single change as clickable HTML"""
-        cursor_style = "cursor: pointer;"
-        tooltip = "title='Klicken um zu akzeptieren/ablehnen'"
+        """Render a single change as clickable HTML with CSS classes"""
+        state_name = change.state.name.lower()
+        tooltip = self._get_tooltip(change)
+        icon = self._get_state_icon(change)
+
+        # Build CSS class list
+        css_classes = f"change change-{change.operation} change-{state_name}"
 
         if change.operation == 'delete':
-            if change.state == ChangeState.ACCEPTED:
-                # Accepted deletion: show with dark green text + strikethrough
-                return (f'<a href="#{change.change_id}" style="{cursor_style} '
-                       f'color: #2e7d32; background-color: transparent; '
-                       f'text-decoration: line-through;" {tooltip}>{change.original_text}</a>')
-            elif change.state == ChangeState.REJECTED:
-                # Rejected deletion: show with dark red text (deletion rejected, kept original)
-                return (f'<a href="#{change.change_id}" style="{cursor_style} '
-                       f'color: #c62828; background-color: transparent;" '
-                       f'{tooltip}>{change.original_text}</a>')
-            else:  # PENDING
-                # Pending deletion: red background + strikethrough
-                return (f'<a href="#{change.change_id}" style="{cursor_style} '
-                       f'background-color: {TextProcessor.COLOR_DELETION}; '
-                       f'text-decoration: line-through; padding: 2px 4px;" '
-                       f'{tooltip}>{change.original_text}</a>')
-
+            # Deletions show original text
+            text = change.original_text
         elif change.operation == 'insert':
-            if change.state == ChangeState.ACCEPTED:
-                # Accepted insertion: dark green text on white
-                return (f'<a href="#{change.change_id}" style="{cursor_style} '
-                       f'color: #2e7d32; background-color: transparent;" '
-                       f'{tooltip}>{change.modified_text}</a>')
-            elif change.state == ChangeState.REJECTED:
-                # Rejected insertion: dark red text with strikethrough (not included)
-                return (f'<a href="#{change.change_id}" style="{cursor_style} '
-                       f'color: #c62828; background-color: transparent; '
-                       f'text-decoration: line-through;" {tooltip}>{change.modified_text}</a>')
-            else:  # PENDING
-                # Pending insertion: green background
-                return (f'<a href="#{change.change_id}" style="{cursor_style} '
-                       f'background-color: {TextProcessor.COLOR_ADDITION}; '
-                       f'padding: 2px 4px;" '
-                       f'{tooltip}>{change.modified_text}</a>')
-
+            # Insertions show modified text
+            text = change.modified_text
         elif change.operation == 'replace':
-            if change.state == ChangeState.ACCEPTED:
-                # Accepted replacement: dark green text on white (new version)
-                return (f'<a href="#{change.change_id}" style="{cursor_style} '
-                       f'color: #2e7d32; background-color: transparent;" '
-                       f'{tooltip}>{change.modified_text}</a>')
-            elif change.state == ChangeState.REJECTED:
-                # Rejected replacement: dark red text on white (original kept)
-                return (f'<a href="#{change.change_id}" style="{cursor_style} '
-                       f'color: #c62828; background-color: transparent;" '
-                       f'{tooltip}>{change.original_text}</a>')
-            else:  # PENDING
-                # Pending replacement: old (red bg, strikethrough) → new (green bg)
-                return (f'<a href="#{change.change_id}" style="{cursor_style} '
-                       f'background-color: {TextProcessor.COLOR_DELETION}; '
-                       f'text-decoration: line-through; padding: 2px 4px;" '
-                       f'{tooltip}>{change.original_text}</a> '
-                       f'<a href="#{change.change_id}" style="{cursor_style} '
-                       f'background-color: {TextProcessor.COLOR_ADDITION}; '
-                       f'padding: 2px 4px;" '
-                       f'{tooltip}>{change.modified_text}</a>')
+            # Replacements: show original or modified based on state
+            if change.state == ChangeState.REJECTED:
+                # Rejected: keep original
+                text = change.original_text
+            else:
+                # Accepted or pending: show modified
+                text = change.modified_text
+        else:
+            text = change.modified_text
 
-        return change.modified_text
+        # Special handling for replace operation in PENDING state
+        # Show both old (strikethrough) and new text
+        if change.operation == 'replace' and change.state == ChangeState.PENDING:
+            old_part = (f'<a href="#{change.change_id}" '
+                       f'class="change change-delete change-pending" '
+                       f'data-state="{state_name}" '
+                       f'data-operation="{change.operation}" '
+                       f'title="{tooltip}">'
+                       f'{icon} {change.original_text}</a>')
+            new_part = (f'<a href="#{change.change_id}" '
+                       f'class="change change-insert change-pending" '
+                       f'data-state="{state_name}" '
+                       f'data-operation="{change.operation}" '
+                       f'title="{tooltip}">'
+                       f'{icon} {change.modified_text}</a>')
+            return f'{old_part} {new_part}'
+
+        # Standard rendering for all other cases
+        return (f'<a href="#{change.change_id}" '
+               f'class="{css_classes}" '
+               f'data-state="{state_name}" '
+               f'data-operation="{change.operation}" '
+               f'title="{tooltip}">'
+               f'{icon} {text}</a>')
 
 
 class TextProcessor:

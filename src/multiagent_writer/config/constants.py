@@ -58,17 +58,40 @@ class UIConstants:
 
 class DiffColors:
     """Diff styling colors"""
+    # Base colors
     ADDITION = "#c8e6c9"
     DELETION = "#ffcdd2"
     MODIFICATION = "#fff9c4"
     ACCEPTED_COLOR = "#2e7d32"
     REJECTED_COLOR = "#c62828"
 
+    # Hover colors
+    ADDITION_HOVER = "#a5d6a7"          # Darker green on hover
+    DELETION_HOVER = "#ef9a9a"          # Darker red on hover
+    ACCEPTED_HOVER = "#1b5e20"          # Darker green for accepted
+    REJECTED_HOVER = "#b71c1c"          # Darker red for rejected
+
+    # Border colors
+    BORDER_PENDING = "rgba(0,0,0,0.2)"
+    BORDER_ACCEPTED = "rgba(46,125,50,0.3)"
+    BORDER_REJECTED = "rgba(198,40,40,0.3)"
+    BORDER_HOVER_PENDING = "rgba(0,0,0,0.4)"
+    BORDER_HOVER_ACCEPTED = "rgba(46,125,50,0.6)"
+    BORDER_HOVER_REJECTED = "rgba(198,40,40,0.6)"
+
 
 class DiffStyle:
     """Diff rendering styles"""
     CURSOR = "cursor: pointer;"
     TOOLTIP = "title='Klicken um zu akzeptieren/ablehnen'"
-    PADDING = "2px 4px;"
+    PADDING = "2px 4px"
+    MARGIN = "0 1px"
     LINE_HEIGHT = 1.8
     FONT_FAMILY = "Arial, sans-serif"
+
+    # Visual styling for borders and transitions
+    BORDER_RADIUS = "3px"
+    BORDER_WIDTH = "1px"
+    BORDER_WIDTH_HOVER = "2px"
+    BOX_SHADOW_HOVER = "0 2px 4px rgba(0,0,0,0.15)"
+    TRANSITION = "all 0.2s ease"
