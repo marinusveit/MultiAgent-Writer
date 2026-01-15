@@ -16,9 +16,9 @@ class ConfigManager:
 
     # Default models for multi-agent workflows
     DEFAULT_MODELS = {
-        'kimi_k2': 'openai/gpt-oss-120b',
-        'claude_opus': 'anthropic/claude-3.5-sonnet',
-        'gpt_52': 'openai/gpt-4o'
+        "kimi_k2": "moonshotai/kimi-k2-0905",
+        "claude_opus": "anthropic/claude-opus-4.5",
+        "gpt_52": "openai/gpt-5.2"
     }
 
     def __init__(self, config_path: str = "config.json"):

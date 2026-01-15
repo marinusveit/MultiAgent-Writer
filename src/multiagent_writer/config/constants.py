@@ -118,17 +118,16 @@ class ModelQuality:
             'gpt_52': 'openai/gpt-oss-120b'
         },
         HIGH_END: {
-            'kimi_k2': 'openai/gpt-oss-120b',  # Keep cheap for step 1
-            'claude_opus': 'anthropic/claude-opus-4-5-20251101',
-            'gpt_52': 'openai/chatgpt-4o-latest'  # GPT-5.2
+            'kimi_k2': 'moonshotai/kimi-k2-0905',  # Keep cheap for step 1
+            'claude_opus': 'anthropic/claude-opus-4.5',
+            'gpt_52': 'openai/gpt-5.2'  # GPT-5.2
         }
     }
 
     # User-friendly model names for display
     MODEL_DISPLAY_NAMES = {
         'openai/gpt-oss-120b': 'GPT-OSS-120B',
-        'anthropic/claude-opus-4-5-20251101': 'Claude Opus 4.5',
-        'openai/chatgpt-4o-latest': 'GPT-5.2',
-        'anthropic/claude-3.5-sonnet': 'Claude 3.5 Sonnet',
-        'openai/gpt-4o': 'GPT-4o'
+        'anthropic/claude-opus-4.5': 'Claude Opus 4.5',
+        'openai/gpt-5.2': 'GPT-5.2',
+        'moonshotai/kimi-k2-0905': 'Kimi K2',
     }
