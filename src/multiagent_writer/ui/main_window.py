@@ -68,7 +68,7 @@ class ThesisImproverWindow(QMainWindow):
         # Modus-Auswahl
         mode_label = QLabel("Modus:")
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["ausformulieren", "korrekturlesen"])
+        self.mode_combo.addItems(["korrekturlesen", "ausformulieren"])
         # Tooltip will be set dynamically after config is loaded
         # Signal: Button-Text aktualisieren, wenn Modus geändert wird
         self.mode_combo.currentTextChanged.connect(self.update_process_button_text)
